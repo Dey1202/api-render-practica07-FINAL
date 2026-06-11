@@ -36,9 +36,13 @@ def init_db():
         return
     cur = conn.cursor()
     try:
-        # 1. Tabla de materias (Estructura oficial del PDF corregida)
+        # Forzar la limpieza eliminando tablas previas incompletas o rotas
+        cur.execute("DROP TABLE IF EXISTS materias CASCADE;")
+        cur.execute("DROP TABLE IF EXISTS reportes CASCADE;")
+        
+        # 1. Tabla de materias corregida de la práctica
         cur.execute("""
-        CREATE TABLE IF NOT EXISTS materias (
+        CREATE TABLE materias (
             id SERIAL PRIMARY KEY,
             clave VARCHAR(15) NOT NULL UNIQUE,
             nombre VARCHAR(150) NOT NULL,
@@ -53,9 +57,9 @@ def init_db():
         );
         """)
         
-        # 2. Tabla de reportes (Requerida para almacenar los CRONS)
+        # 2. Tabla de reportes (Requerida para almacenar las ejecuciones del Cron)
         cur.execute("""
-        CREATE TABLE IF NOT EXISTS reportes (
+        CREATE TABLE reportes (
             id SERIAL PRIMARY KEY,
             tipo VARCHAR(50),
             datos JSONB,
@@ -63,28 +67,27 @@ def init_db():
         );
         """)
         
-        # 3. Insertar catálogo inicial si la tabla está vacía
-        cur.execute("SELECT COUNT(*) FROM materias")
-        if cur.fetchone()[0] == 0:
-            materias_iniciales = [
-                ('INF-101', 'Fundamentos de Programacion', 1, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
-                ('INF-102', 'Matematicas Discretas', 1, 5, 'Obligatoria', 4, 1, 'Logica computacional'),
-                ('INF-201', 'Estructura de Datos', 2, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
-                ('INF-202', 'Arquitectura de Computadoras', 2, 5, 'Obligatoria', 4, 1, 'Hardware y redes'),
-                ('INF-301', 'Bases de Datos', 3, 6, 'Obligatoria', 3, 3, 'Gestion de datos'),
-                ('INF-302', 'Redes de Computadoras', 3, 5, 'Obligatoria', 3, 2, 'Hardware y redes'),
-                ('INF-401', 'Ingenieria de Software', 4, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
-                ('INF-402', 'Sistemas Operativos', 4, 5, 'Obligatoria', 3, 2, 'Infraestructura')
-            ]
-            for m in materias_iniciales:
-                cur.execute("""
-                INSERT INTO materias (clave, nombre, semestre, creditos, tipo, horas_teoria, horas_practica, competencia)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
-                """, m)
-            conn.commit()
-            print("Catálogo de materias inicializado con éxito.")
+        # 3. Inyectar catálogo completo de Ingeniería en Informática de golpe
+        materias_iniciales = [
+            ('INF-101', 'Fundamentos de Programacion', 1, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
+            ('INF-102', 'Matematicas Discretas', 1, 5, 'Obligatoria', 4, 1, 'Logica computacional'),
+            ('INF-201', 'Estructura de Datos', 2, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
+            ('INF-202', 'Arquitectura de Computadoras', 2, 5, 'Obligatoria', 4, 1, 'Hardware y redes'),
+            ('INF-301', 'Bases de Datos', 3, 6, 'Obligatoria', 3, 3, 'Gestion de datos'),
+            ('INF-302', 'Redes de Computadoras', 3, 5, 'Obligatoria', 3, 2, 'Hardware y redes'),
+            ('INF-401', 'Ingenieria de Software', 4, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
+            ('INF-402', 'Sistemas Operativos', 4, 5, 'Obligatoria', 3, 2, 'Infraestructura')
+        ]
+        for m in materias_iniciales:
+            cur.execute("""
+            INSERT INTO materias (clave, nombre, semestre, creditos, tipo, horas_teoria, horas_practica, competencia)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+            """, m)
+            
+        conn.commit()
+        print("¡Catálogo de materias inyectado exitosamente desde cero!")
     except Exception as e:
-        print(f"Error inicializando tablas: {e}")
+        print(f"Error cargando los datos iniciales: {e}")
     finally:
         cur.close()
         conn.close()
@@ -218,7 +221,7 @@ def status():
         "base_datos": "Conectada" if (USAR_DB and DATABASE_URL) else "Desconectada"
     })
 
-# Inicializar tablas al encender
+# Inicializar tablas al encender de forma limpia
 if DATABASE_URL:
     init_db()
 
