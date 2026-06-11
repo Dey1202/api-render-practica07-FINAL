@@ -25,7 +25,8 @@ def get_db():
     if not USAR_DB or not DATABASE_URL:
         return None
     try:
-        return psycopg2.connect(DATABASE_URL)
+        # Añadimos un timeout de 5 segundos para que NUNCA se quede colgado esperando por problemas de red
+        return psycopg2.connect(DATABASE_URL, connect_timeout=5)
     except Exception as e:
         print(f"Error de conexión a DB: {e}")
         return None
@@ -33,7 +34,8 @@ def get_db():
 def init_db():
     conn = get_db()
     if not conn:
-        return
+        print("No se pudo inicializar la DB porque no hay conexión activa temporalmente.")
+        return False
     cur = conn.cursor()
     try:
         # 1. Crear tabla de materias si no existe de forma segura
@@ -83,9 +85,11 @@ def init_db():
             """, m)
             
         conn.commit()
-        print("¡Base de datos sincronizada y protegida exitosamente desde cero!")
+        print("¡Base de datos sincronizada y protegida exitosamente!")
+        return True
     except Exception as e:
         print(f"Error cargando los datos iniciales: {e}")
+        return False
     finally:
         cur.close()
         conn.close()
@@ -135,6 +139,9 @@ def requiere_api_key(f):
 
 @app.route("/")
 def index():
+    # Inicialización diferida segura cuando se visita la raíz
+    if DATABASE_URL:
+        init_db()
     return jsonify({
         "msg": "API REST: Catalogo de Materias funcionando",
         "ambiente": APP_ENV,
@@ -143,9 +150,13 @@ def index():
 
 @app.route("/api/materias", methods=["GET"])
 def listar_materias():
+    # Asegura que las tablas se creen e inyecten antes de intentar listar
+    if DATABASE_URL:
+        init_db()
+        
     conn = get_db()
     if not conn:
-        return jsonify({"error": "Base de datos no disponible"}), 503
+        return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
     semestre = request.args.get("semestre")
@@ -214,14 +225,15 @@ def listar_reportes():
 
 @app.route("/api/status")
 def status():
+    conn = get_db()
+    db_ok = False
+    if conn:
+        db_ok = True
+        conn.close()
     return jsonify({
         "status": "ok",
-        "base_datos": "Conectada" if (USAR_DB and DATABASE_URL) else "Desconectada"
+        "base_datos": "Conectada" if db_ok else "Desconectada o en espera"
     })
-
-# Inicializar tablas al encender de forma limpia
-if DATABASE_URL:
-    init_db()
 
 # Configurar e iniciar el programador de tareas en segundo plano
 if __name__ == "__main__":
