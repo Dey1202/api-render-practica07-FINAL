@@ -25,8 +25,11 @@ def get_db():
     if not USAR_DB or not DATABASE_URL:
         return None
     try:
-        # Añadimos un timeout de 5 segundos para que NUNCA se quede colgado esperando por problemas de red
-        return psycopg2.connect(DATABASE_URL, connect_timeout=5)
+        # Detecta si estás usando la URL interna o externa y ajusta el SSL automáticamente
+        if ".internal" in DATABASE_URL:
+            return psycopg2.connect(DATABASE_URL, sslmode="disable", connect_timeout=5)
+        else:
+            return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
     except Exception as e:
         print(f"Error de conexión a DB: {e}")
         return None
@@ -139,7 +142,6 @@ def requiere_api_key(f):
 
 @app.route("/")
 def index():
-    # Inicialización diferida segura cuando se visita la raíz
     if DATABASE_URL:
         init_db()
     return jsonify({
@@ -150,7 +152,6 @@ def index():
 
 @app.route("/api/materias", methods=["GET"])
 def listar_materias():
-    # Asegura que las tablas se creen e inyecten antes de intentar listar
     if DATABASE_URL:
         init_db()
         
@@ -199,49 +200,3 @@ def crear_materia():
         nueva = cur.fetchone()
         conn.commit()
         if nueva.get("fecha_registro"):
-            nueva["fecha_registro"] = nueva["fecha_registro"].isoformat()
-        return jsonify({"mensaje": "Materia creada", "materia": nueva}), 201
-    except psycopg2.errors.UniqueViolation:
-        conn.rollback()
-        return jsonify({"error": "La clave ya existe"}), 409
-    finally:
-        cur.close()
-        conn.close()
-
-@app.route("/api/reportes", methods=["GET"])
-def listar_reportes():
-    conn = get_db()
-    if not conn:
-        return jsonify({"error": "DB no disponible"}), 503
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM reportes ORDER BY fecha DESC LIMIT 10")
-    reportes = cur.fetchall()
-    cur.close()
-    conn.close()
-    for r in reportes:
-        if r.get("fecha"):
-            r["fecha"] = r["fecha"].isoformat()
-    return jsonify({"total": len(reportes), "reportes": reportes})
-
-@app.route("/api/status")
-def status():
-    conn = get_db()
-    db_ok = False
-    if conn:
-        db_ok = True
-        conn.close()
-    return jsonify({
-        "status": "ok",
-        "base_datos": "Conectada" if db_ok else "Desconectada o en espera"
-    })
-
-# Configurar e iniciar el programador de tareas en segundo plano
-if __name__ == "__main__":
-    app.config['SCHEDULER_API_ENABLED'] = False
-    scheduler.init_app(app)
-    # Programa la tarea para ejecutarse cada 1 hora de manera interna
-    scheduler.add_job(id='cron_interno', func=tarea_cron_reporte, trigger='interval', hours=1)
-    scheduler.start()
-    
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
