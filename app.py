@@ -36,13 +36,9 @@ def init_db():
         return
     cur = conn.cursor()
     try:
-        # Forzar la limpieza eliminando tablas previas incompletas o rotas
-        cur.execute("DROP TABLE IF EXISTS materias CASCADE;")
-        cur.execute("DROP TABLE IF EXISTS reportes CASCADE;")
-        
-        # 1. Tabla de materias corregida de la práctica
+        # 1. Crear tabla de materias si no existe de forma segura
         cur.execute("""
-        CREATE TABLE materias (
+        CREATE TABLE IF NOT EXISTS materias (
             id SERIAL PRIMARY KEY,
             clave VARCHAR(15) NOT NULL UNIQUE,
             nombre VARCHAR(150) NOT NULL,
@@ -57,9 +53,9 @@ def init_db():
         );
         """)
         
-        # 2. Tabla de reportes (Requerida para almacenar las ejecuciones del Cron)
+        # 2. Crear tabla de reportes si no existe de forma segura
         cur.execute("""
-        CREATE TABLE reportes (
+        CREATE TABLE IF NOT EXISTS reportes (
             id SERIAL PRIMARY KEY,
             tipo VARCHAR(50),
             datos JSONB,
@@ -67,7 +63,7 @@ def init_db():
         );
         """)
         
-        # 3. Inyectar catálogo completo de Ingeniería en Informática de golpe
+        # 3. Inyectar catálogo completo de Ingeniería en Informática evitando duplicados o colisiones
         materias_iniciales = [
             ('INF-101', 'Fundamentos de Programacion', 1, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
             ('INF-102', 'Matematicas Discretas', 1, 5, 'Obligatoria', 4, 1, 'Logica computacional'),
@@ -78,14 +74,16 @@ def init_db():
             ('INF-401', 'Ingenieria de Software', 4, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
             ('INF-402', 'Sistemas Operativos', 4, 5, 'Obligatoria', 3, 2, 'Infraestructura')
         ]
+        
         for m in materias_iniciales:
             cur.execute("""
             INSERT INTO materias (clave, nombre, semestre, creditos, tipo, horas_teoria, horas_practica, competencia)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (clave) DO NOTHING;
             """, m)
             
         conn.commit()
-        print("¡Catálogo de materias inyectado exitosamente desde cero!")
+        print("¡Base de datos sincronizada y protegida exitosamente desde cero!")
     except Exception as e:
         print(f"Error cargando los datos iniciales: {e}")
     finally:
