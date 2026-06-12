@@ -160,13 +160,28 @@ def listar_materias():
         return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
+    # Capturar TODOS los parámetros de filtrado desde la URL
     semestre = request.args.get("semestre")
+    tipo = request.args.get("tipo")
+    competencia = request.args.get("competencia")
+    
     query = "SELECT * FROM materias WHERE activa = true"
     params = []
     
+    # Filtro dinámico 1: Semestre
     if semestre:
         query += " AND semestre = %s"
         params.append(int(semestre))
+        
+    # Filtro dinámico 2: Tipo de Materia (Obligatoria/Optativa)
+    if tipo:
+        query += " AND tipo ILIKE %s"
+        params.append(f"{tipo}")
+        
+    # Filtro dinámico 3: Competencia (Búsqueda parcial inexacta ILIKE)
+    if competencia:
+        query += " AND competencia ILIKE %s"
+        params.append(f"%{competencia}%")
         
     query += " ORDER BY semestre, clave"
     cur.execute(query, params)
@@ -199,4 +214,84 @@ def crear_materia():
               data.get("tipo", "Obligatoria"), data.get("horas_teoria", 3), data.get("horas_practica", 2), data.get("competencia", "")))
         nueva = cur.fetchone()
         conn.commit()
-        if nueva.get("fecha_registro"):
+        if nueva and nueva.get("fecha_registro"):
+            nueva["fecha_registro"] = nueva["fecha_registro"].isoformat()
+        return jsonify({"mensaje": "Materia creada", "materia": nueva}), 201
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return jsonify({"error": "La clave ya existe"}), 409
+    finally:
+        cur.close()
+        conn.close()
+
+# NUEVA RUTA SOLICITADA: Estadísticas completas calculadas en tiempo real desde la DB
+@app.route("/api/estadisticas", methods=["GET"])
+def obtener_estadisticas():
+    if DATABASE_URL:
+        init_db()
+    conn = get_db()
+    if not conn:
+        return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        # Conteo total de materias activas
+        cur.execute("SELECT COUNT(*) as total FROM materias WHERE activa = true")
+        total = cur.fetchone()["total"]
+        
+        # Distribución de conteos agrupado por semestres
+        cur.execute("SELECT semestre, COUNT(*) as cantidad FROM materias WHERE activa = true GROUP BY semestre ORDER BY semestre")
+        por_semestre = cur.fetchall()
+        
+        # Distribución de conteos por tipo (Obligatoria vs Optativa)
+        cur.execute("SELECT tipo, COUNT(*) as cantidad FROM materias WHERE activa = true GROUP BY tipo")
+        por_tipo = cur.fetchall()
+        
+        return jsonify({
+            "total_materias": total,
+            "distribucion_semestre": por_semestre,
+            "distribucion_tipo": por_tipo,
+            "fecha_calculo": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error calculando estadisticas: {e}"}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/api/reportes", methods=["GET"])
+def listar_reportes():
+    conn = get_db()
+    if not conn:
+        return jsonify({"error": "DB no disponible"}), 503
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM reportes ORDER BY fecha DESC LIMIT 10")
+    reportes = cur.fetchall()
+    cur.close()
+    conn.close()
+    for r in reportes:
+        if r.get("fecha"):
+            r["fecha"] = r["fecha"].isoformat()
+    return jsonify({"total": len(reportes), "reportes": reportes})
+
+@app.route("/api/status")
+def status():
+    conn = get_db()
+    db_ok = False
+    if conn:
+        db_ok = True
+        conn.close()
+    return jsonify({
+        "status": "ok",
+        "base_datos": "Conectada" if db_ok else "Desconectada o en espera"
+    })
+
+# Configurar e iniciar el programador de tareas en segundo plano
+if __name__ == "__main__":
+    app.config['SCHEDULER_API_ENABLED'] = False
+    scheduler.init_app(app)
+    scheduler.add_job(id='cron_interno', func=tarea_cron_reporte, trigger='interval', hours=1)
+    scheduler.start()
+    
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
