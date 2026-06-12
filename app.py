@@ -17,7 +17,6 @@ app = Flask(__name__)
 scheduler = APScheduler()
 
 # Configuración limpia de variables de entorno de Render
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
 API_KEY = os.environ.get("API_KEY", "clave-practica-07")
 APP_ENV = os.environ.get("APP_ENV", "production")
 
@@ -25,17 +24,18 @@ def get_db():
     if not USAR_DB:
         return None
     try:
-        # CONEXIÓN DIRECTA DESGLOSADA: Evita errores de parsing de URL y saltos de timeout
+        # CONEXIÓN INTERNA DIRECTA: Usa el host interno privado que me pasaste.
+        # En la red interna de Render, el tráfico no va cifrado, por lo que sslmode debe ser 'disable'.
         return psycopg2.connect(
-            host="dpg-d8lfqha8qa3s73e66dhg-a.ohio-postgres.render.com",
+            host="dpg-d8lfqha8qa3s73e66dhg-a",
             database="flask_db_36tl",
             user="flask_user",
             password="VX1dWJ4Om4rgDdRYCTIKNFSmkZzcL5fL",
-            sslmode="require",
+            sslmode="disable",
             connect_timeout=10
         )
     except Exception as e:
-        print(f"Error de conexión directa a DB: {e}")
+        print(f"Error de conexión directa interna a DB: {e}")
         return None
 
 def init_db():
@@ -72,7 +72,7 @@ def init_db():
         );
         """)
         
-        # 3. Inyectar catálogo completo de Ingeniería en Informática
+        # 3. Inyectar catálogo completo de Ingeniería en Informática evitando duplicados
         materias_iniciales = [
             ('INF-101', 'Fundamentos de Programacion', 1, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
             ('INF-102', 'Matematicas Discretas', 1, 5, 'Obligatoria', 4, 1, 'Logica computacional'),
