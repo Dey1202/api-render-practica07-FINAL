@@ -25,11 +25,17 @@ def get_db():
     if not USAR_DB or not DATABASE_URL:
         return None
     try:
-        # Detecta si estás usando la URL interna o externa y ajusta el SSL automáticamente
+        # Si usas la URL interna, se conecta directo sin cifrado
         if ".internal" in DATABASE_URL:
             return psycopg2.connect(DATABASE_URL, sslmode="disable", connect_timeout=5)
         else:
-            return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
+            # FORZAMOS el uso del certificado del sistema de Render para saltar el bloqueo por IP
+            return psycopg2.connect(
+                DATABASE_URL, 
+                sslmode="require", 
+                sslrootcert="/etc/ssl/certs/ca-certificates.crt",
+                connect_timeout=5
+            )
     except Exception as e:
         print(f"Error de conexión a DB: {e}")
         return None
@@ -68,7 +74,7 @@ def init_db():
         );
         """)
         
-        # 3. Inyectar catálogo completo de Ingeniería en Informática evitando duplicados o colisiones
+        # 3. Inyectar catálogo completo de Ingeniería en Informática
         materias_iniciales = [
             ('INF-101', 'Fundamentos de Programacion', 1, 6, 'Obligatoria', 3, 3, 'Desarrollo de software'),
             ('INF-102', 'Matematicas Discretas', 1, 5, 'Obligatoria', 4, 1, 'Logica computacional'),
@@ -97,7 +103,7 @@ def init_db():
         cur.close()
         conn.close()
 
-# TAREA DE CRON INTERNA (Ejecución automática en segundo plano cada hora)
+# TAREA DE CRON INTERNA
 def tarea_cron_reporte():
     conn = get_db()
     if not conn:
@@ -160,7 +166,6 @@ def listar_materias():
         return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     
-    # Capturar TODOS los parámetros de filtrado desde la URL
     semestre = request.args.get("semestre")
     tipo = request.args.get("tipo")
     competencia = request.args.get("competencia")
@@ -168,17 +173,14 @@ def listar_materias():
     query = "SELECT * FROM materias WHERE activa = true"
     params = []
     
-    # Filtro dinámico 1: Semestre
     if semestre:
         query += " AND semestre = %s"
         params.append(int(semestre))
         
-    # Filtro dinámico 2: Tipo de Materia (Obligatoria/Optativa)
     if tipo:
         query += " AND tipo ILIKE %s"
         params.append(f"{tipo}")
         
-    # Filtro dinámico 3: Competencia (Búsqueda parcial inexacta ILIKE)
     if competencia:
         query += " AND competencia ILIKE %s"
         params.append(f"%{competencia}%")
@@ -224,7 +226,6 @@ def crear_materia():
         cur.close()
         conn.close()
 
-# NUEVA RUTA SOLICITADA: Estadísticas completas calculadas en tiempo real desde la DB
 @app.route("/api/estadisticas", methods=["GET"])
 def obtener_estadisticas():
     if DATABASE_URL:
@@ -234,16 +235,12 @@ def obtener_estadisticas():
         return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
-        # Conteo total de materias activas
         cur.execute("SELECT COUNT(*) as total FROM materias WHERE activa = true")
         total = cur.fetchone()["total"]
         
-        # Distribución de conteos agrupado por semestres
         cur.execute("SELECT semestre, COUNT(*) as cantidad FROM materias WHERE activa = true GROUP BY semestre ORDER BY semestre")
         por_semestre = cur.fetchall()
         
-        # Distribución de conteos por tipo (Obligatoria vs Optativa)
         cur.execute("SELECT tipo, COUNT(*) as cantidad FROM materias WHERE activa = true GROUP BY tipo")
         por_tipo = cur.fetchall()
         
@@ -286,7 +283,6 @@ def status():
         "base_datos": "Conectada" if db_ok else "Desconectada o en espera"
     })
 
-# Configurar e iniciar el programador de tareas en segundo plano
 if __name__ == "__main__":
     app.config['SCHEDULER_API_ENABLED'] = False
     scheduler.init_app(app)
