@@ -24,10 +24,9 @@ def get_db():
     if not USAR_DB:
         return None
     try:
-        # CONEXIÓN INTERNA DIRECTA: Usa el host interno privado que me pasaste.
-        # En la red interna de Render, el tráfico no va cifrado, por lo que sslmode debe ser 'disable'.
+        # CONEXIÓN PRIVADA INTERNA CORRECTA: Host interno completo con sslmode='disable'
         return psycopg2.connect(
-            host="dpg-d8lfqha8qa3s73e66dhg-a",
+            host="dpg-d8lfqha8qa3s73e66dhg-a.ohio-postgres.render.com",
             database="flask_db_36tl",
             user="flask_user",
             password="VX1dWJ4Om4rgDdRYCTIKNFSmkZzcL5fL",
