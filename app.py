@@ -4,14 +4,8 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 from functools import wraps
 from flask_apscheduler import APScheduler
-
-# Intentar importar psycopg2 de manera segura
-try:
-    import psycopg2
-    import psycopg2.extras
-    USAR_DB = True
-except ImportError:
-    USAR_DB = False
+import psycopg2
+import psycopg2.extras
 
 app = Flask(__name__)
 scheduler = APScheduler()
@@ -20,21 +14,15 @@ scheduler = APScheduler()
 API_KEY = os.environ.get("API_KEY", "clave-practica-07")
 APP_ENV = os.environ.get("APP_ENV", "production")
 
+# URL Externa oficial de tu base de datos con SSL requerido para saltar bloqueos
+DB_URL = "postgresql://flask_user:VX1dWJ4Om4rgDdRYCTIKNFSmkZzcL5fL@dpg-d8lfqha8qa3s73e66dhg-a.ohio-postgres.render.com/flask_db_36tl"
+
 def get_db():
-    if not USAR_DB:
-        return None
     try:
-        # CONEXIÓN PRIVADA INTERNA CORRECTA: Host interno completo con sslmode='disable'
-        return psycopg2.connect(
-            host="dpg-d8lfqha8qa3s73e66dhg-a.ohio-postgres.render.com",
-            database="flask_db_36tl",
-            user="flask_user",
-            password="VX1dWJ4Om4rgDdRYCTIKNFSmkZzcL5fL",
-            sslmode="disable",
-            connect_timeout=10
-        )
+        # Forzamos la conexión usando la URL completa con SSL obligatorio
+        return psycopg2.connect(DB_URL, sslmode="require", connect_timeout=10)
     except Exception as e:
-        print(f"Error de conexión directa interna a DB: {e}")
+        print(f"Error crítico en get_db(): {e}")
         return None
 
 def init_db():
