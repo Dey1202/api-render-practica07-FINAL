@@ -22,22 +22,20 @@ API_KEY = os.environ.get("API_KEY", "clave-practica-07")
 APP_ENV = os.environ.get("APP_ENV", "production")
 
 def get_db():
-    if not USAR_DB or not DATABASE_URL:
+    if not USAR_DB:
         return None
     try:
-        # Si usas la URL interna, se conecta directo sin cifrado
-        if ".internal" in DATABASE_URL:
-            return psycopg2.connect(DATABASE_URL, sslmode="disable", connect_timeout=5)
-        else:
-            # FORZAMOS el uso del certificado del sistema de Render para saltar el bloqueo por IP
-            return psycopg2.connect(
-                DATABASE_URL, 
-                sslmode="require", 
-                sslrootcert="/etc/ssl/certs/ca-certificates.crt",
-                connect_timeout=5
-            )
+        # CONEXIÓN DIRECTA DESGLOSADA: Evita errores de parsing de URL y saltos de timeout
+        return psycopg2.connect(
+            host="dpg-d8lfqha8qa3s73e66dhg-a.ohio-postgres.render.com",
+            database="flask_db_36tl",
+            user="flask_user",
+            password="VX1dWJ4Om4rgDdRYCTIKNFSmkZzcL5fL",
+            sslmode="require",
+            connect_timeout=10
+        )
     except Exception as e:
-        print(f"Error de conexión a DB: {e}")
+        print(f"Error de conexión directa a DB: {e}")
         return None
 
 def init_db():
@@ -47,7 +45,7 @@ def init_db():
         return False
     cur = conn.cursor()
     try:
-        # 1. Crear tabla de materias si no existe de forma segura
+        # 1. Crear tabla de materias si no existe
         cur.execute("""
         CREATE TABLE IF NOT EXISTS materias (
             id SERIAL PRIMARY KEY,
@@ -64,7 +62,7 @@ def init_db():
         );
         """)
         
-        # 2. Crear tabla de reportes si no existe de forma segura
+        # 2. Crear tabla de reportes si no existe
         cur.execute("""
         CREATE TABLE IF NOT EXISTS reportes (
             id SERIAL PRIMARY KEY,
@@ -103,7 +101,6 @@ def init_db():
         cur.close()
         conn.close()
 
-# TAREA DE CRON INTERNA
 def tarea_cron_reporte():
     conn = get_db()
     if not conn:
@@ -127,7 +124,7 @@ def tarea_cron_reporte():
         cur.execute("INSERT INTO reportes (tipo, datos) VALUES (%s, %s);", 
                     ("estadisticas_automaticas", json.dumps(datos_reporte)))
         conn.commit()
-        print(f"[{datetime.now()}] Reporte estadístico Cron generado en la Base de Datos.")
+        print(f"[{datetime.now()}] Reporte estadístico Cron generado.")
     except Exception as e:
         print(f"Error en tarea Cron: {e}")
     finally:
@@ -148,19 +145,16 @@ def requiere_api_key(f):
 
 @app.route("/")
 def index():
-    if DATABASE_URL:
-        init_db()
+    init_db()
     return jsonify({
         "msg": "API REST: Catalogo de Materias funcionando",
         "ambiente": APP_ENV,
-        "cron_status": "Programador automatico interno activo (Gratuito)"
+        "cron_status": "Programador automatico interno activo"
     })
 
 @app.route("/api/materias", methods=["GET"])
 def listar_materias():
-    if DATABASE_URL:
-        init_db()
-        
+    init_db()
     conn = get_db()
     if not conn:
         return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
@@ -228,8 +222,7 @@ def crear_materia():
 
 @app.route("/api/estadisticas", methods=["GET"])
 def obtener_estadisticas():
-    if DATABASE_URL:
-        init_db()
+    init_db()
     conn = get_db()
     if not conn:
         return jsonify({"error": "Base de datos no disponible temporalmente"}), 503
@@ -256,21 +249,6 @@ def obtener_estadisticas():
         cur.close()
         conn.close()
 
-@app.route("/api/reportes", methods=["GET"])
-def listar_reportes():
-    conn = get_db()
-    if not conn:
-        return jsonify({"error": "DB no disponible"}), 503
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM reportes ORDER BY fecha DESC LIMIT 10")
-    reportes = cur.fetchall()
-    cur.close()
-    conn.close()
-    for r in reportes:
-        if r.get("fecha"):
-            r["fecha"] = r["fecha"].isoformat()
-    return jsonify({"total": len(reportes), "reportes": reportes})
-
 @app.route("/api/status")
 def status():
     conn = get_db()
@@ -280,7 +258,7 @@ def status():
         conn.close()
     return jsonify({
         "status": "ok",
-        "base_datos": "Conectada" if db_ok else "Desconectada o en espera"
+        "base_datos": "Conectada" if db_ok else "Desconectada"
     })
 
 if __name__ == "__main__":
